@@ -1,0 +1,8 @@
+from this issue:
+https://github.com/rust-lang/regex/issues/425
+
+I don't personally have an urgent need for this functionality, but I do think it would be useful and would make the regex crate even more powerful and flexible. I also have a motivating use-case that I didn't see mentioned in the previous issue.
+
+More importantly, though, I think I have a reasonable design that would handle all the relevant use-cases for streaming regex--or at least would make the regex crate not the limiting/blocking factor. I don't have the time/energy to work on implementing it myself, so please take this proposal with the appropriate amount of salt. It's more of a thought and a "hey, I think this design might work", than anything else.
+
+And most importantly: thanks so much to everyone who has put time and effort into contributing to the regex crate! It is no coincidence that it has become such staple of the Rust ecosystem. It's a great piece of software!
