@@ -1,6 +1,6 @@
 [package]
 name = "regex-chunker"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Dan (d2718) <dx2718@gmail.com>"]
 edition = "2021"
 license-file = "LICENSE"
@@ -10,12 +10,12 @@ regular-expression-delimited way.
 """
 homepage = "https://github.com/d2718/regex-chunker"
 repository = "https://github.com/d2718/regex-chunker"
-documentation = "https://docs.rs/dumb_cgi"
+documentation = "https://docs.rs/regex_chunker"
 readme = "README.md"
 categories = ["text-processing"]
 keywords = ["regex", "iterator", "read", "chunking"]
 
-autobins = false
+#autobins = false
 
 [dependencies]
 regex = "^1.9"
