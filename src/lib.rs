@@ -10,8 +10,6 @@ use regex::bytes::Regex;
 
 pub use crate::err::RcErr;
 
-//const DEBUG: bool = true;
-
 // By default the `read_buffer` size is 1 KiB.
 const DEFAULT_BUFFER_SIZE: usize = 1024;
 
@@ -34,7 +32,7 @@ pub enum ErrorResponse {
     /// This may result in an endless stream of errors.
     Continue,
     /// Attempt to recover and continue until it's possible to return
-    /// another `Some(Ok())`. This may result in a deadlock. 
+    /// another `Some(Ok())`. This may result in a deadlock.
     Ignore,
 }
 
@@ -141,7 +139,8 @@ impl<R> ByteChunker<R> {
     pub fn new(source: R, delimiter: &str) -> Result<Self, RcErr> {
         let fence = Regex::new(delimiter)?;
         Ok(Self {
-            source, fence,
+            source,
+            fence,
             read_buff: vec![0u8; DEFAULT_BUFFER_SIZE],
             search_buff: Vec::new(),
             error_status: ErrorStatus::Ok,
@@ -155,7 +154,7 @@ impl<R> ByteChunker<R> {
     Builder-pattern method for setting the read buffer size.
     Default size is 1024 bytes.
      */
-    pub fn with_buffer_size(&mut self, size: usize) -> &mut Self {
+    pub fn with_buffer_size(mut self, size: usize) -> Self {
         self.read_buff.resize(size, 0);
         self.read_buff.shrink_to_fit();
         self
@@ -166,13 +165,15 @@ impl<R> ByteChunker<R> {
     encountering an error in the course of its operation. Default value
     is [`ErrorResponse::Halt`].
      */
-    pub fn on_error(&mut self, response: ErrorResponse) -> &mut Self {
+    pub fn on_error(mut self, response: ErrorResponse) -> Self {
         self.error_status = match response {
-            ErrorResponse::Halt => if self.error_status != ErrorStatus::Errored {
-                ErrorStatus::Ok
-            } else {
-                ErrorStatus::Errored
-            },
+            ErrorResponse::Halt => {
+                if self.error_status != ErrorStatus::Errored {
+                    ErrorStatus::Ok
+                } else {
+                    ErrorStatus::Errored
+                }
+            }
             ErrorResponse::Continue => ErrorStatus::Continue,
             ErrorResponse::Ignore => ErrorStatus::Ignore,
         };
@@ -183,12 +184,9 @@ impl<R> ByteChunker<R> {
     Builder-pattern method for controlling what the chunker does with the
     matched text. Default value is [`MatchDisposition::Drop`].
      */
-    pub fn with_match(&mut self, behavior: MatchDisposition) -> &mut Self {
+    pub fn with_match(mut self, behavior: MatchDisposition) -> Self {
         self.match_dispo = behavior;
-        if matches!(
-            behavior,
-            MatchDisposition::Drop | MatchDisposition::Append
-        ) {
+        if matches!(behavior, MatchDisposition::Drop | MatchDisposition::Append) {
             // If we swtich to one of these two dispositions, we
             // need to be sure we reset the scan_start_offset, or
             // else we'll never scan the beginning of our buffer.
@@ -197,18 +195,39 @@ impl<R> ByteChunker<R> {
         self
     }
 
+    /**
+    Consumes the [`ByteChunker`] and returns its wrapped `Read`er.
+    The `ByteChunker` may have read some data from its source that may not
+    yet have been returned or successfully matched; this data may be lost.
+    To retrieve that data, see [`ByteChunker::into_innards`].
+    */
+    pub fn into_inner(self) -> R {
+        self.source
+    }
+
+    /**
+    Consumes the [`ByteChunker`] and returns its wrapped `Read`er, as well
+    as any not-yet-processed data that has been read. If this unprocessed
+    data is unimportant, and you just want the reader back, use the more
+    traditional [`ByteChunker::into_inner`].
+    */
+    pub fn into_innards(self) -> (R, Vec<u8>) {
+        (self.source, self.search_buff)
+    }
+
     /*
     Search the search_buffer for a match; if found, return the next chunk
     of bytes to be returned from ]`Iterator::next`].
     */
     fn scan_buffer(&mut self) -> Option<Vec<u8>> {
-        let (start, end) = match self.fence.find_at(
-            &self.search_buff, self.scan_start_offset
-        ) {
+        let (start, end) = match self
+            .fence
+            .find_at(&self.search_buff, self.scan_start_offset)
+        {
             Some(m) => {
                 self.last_scan_matched = true;
                 (m.start(), m.end())
-            },
+            }
             None => {
                 self.last_scan_matched = false;
                 return None;
@@ -220,10 +239,10 @@ impl<R> ByteChunker<R> {
             MatchDisposition::Drop => {
                 new_buff = self.search_buff.split_off(end);
                 self.search_buff.resize(start, 0);
-            },
+            }
             MatchDisposition::Append => {
                 new_buff = self.search_buff.split_off(end);
-            },
+            }
             MatchDisposition::Prepend => {
                 new_buff = self.search_buff.split_off(start);
                 self.scan_start_offset = end - start;
@@ -250,6 +269,11 @@ impl<R> Debug for ByteChunker<R> {
     }
 }
 
+/**
+The [`ByteChunker`] specifically doesn't supply an implementation of
+[`Iterator::size_hint`] because, in general, it's impossible to tell
+how much data is left in a reader.
+*/
 impl<R: Read> Iterator for ByteChunker<R> {
     type Item = Result<Vec<u8>, RcErr>;
 
@@ -262,20 +286,18 @@ impl<R: Read> Iterator for ByteChunker<R> {
             if !self.last_scan_matched {
                 match self.source.read(&mut self.read_buff) {
                     Err(e) => match e.kind() {
-                        ErrorKind::WouldBlock |
-                        ErrorKind::Interrupted => {
+                        ErrorKind::WouldBlock | ErrorKind::Interrupted => {
                             spin_loop();
                             continue;
-                        },
+                        }
                         _ => match self.error_status {
-                            ErrorStatus::Ok |
-                            ErrorStatus::Errored => {
+                            ErrorStatus::Ok | ErrorStatus::Errored => {
                                 self.error_status = ErrorStatus::Errored;
                                 return Some(Err(e.into()));
-                            },
+                            }
                             ErrorStatus::Continue => {
                                 return Some(Err(e.into()));
-                            },
+                            }
                             ErrorStatus::Ignore => {
                                 continue;
                             }
@@ -289,7 +311,7 @@ impl<R: Read> Iterator for ByteChunker<R> {
                             std::mem::swap(&mut self.search_buff, &mut new_buff);
                             return Some(Ok(new_buff));
                         }
-                    },
+                    }
                     Ok(n) => {
                         self.search_buff.extend_from_slice(&self.read_buff[..n]);
                         match self.scan_buffer() {
@@ -299,7 +321,7 @@ impl<R: Read> Iterator for ByteChunker<R> {
                                 continue;
                             }
                         }
-                    },
+                    }
                 }
             } else {
                 match self.scan_buffer() {
@@ -307,19 +329,19 @@ impl<R: Read> Iterator for ByteChunker<R> {
                     None => {
                         spin_loop();
                         continue;
-                    },
+                    }
                 }
             }
         }
     }
 }
 
-/// Type for specifying a `StringChunker`'s behavior upon encountering
+/// Type for specifying a [`StringChunker`]'s behavior upon encountering
 /// non-UTF-8 data.
 #[derive(Clone, Copy, Debug)]
 pub enum Utf8FailureMode {
     /// Lossily convert to UTF-8 (with
-    /// [`std::string::String::from_utf8_lossy`]).
+    /// [`String::from_utf8_lossy`](std::string::String::from_utf8_lossy)).
     Lossy,
     /// Report an error and stop reading (return `Some(Err(RcErr))` once
     /// and then `None` thereafter.
@@ -343,6 +365,33 @@ enum Utf8ErrorStatus {
 }
 impl Eq for Utf8ErrorStatus {}
 
+/**
+The `StringChunker` operates like the [`ByteChunker`], except instead of
+returning `Vec<u8>`s, it returns `Strings`. It also has an extra parameter
+of operation, [`Utf8FailureMode`], which controls how it reacts when
+reading data that is not valid UTF-8.
+
+```
+use regex_chunker::StringChunker;
+use std::io::Cursor;
+
+# fn main() -> Result<(), regex_chunker::RcErr> {
+let text = b"One, two, three, four. Can I have a little more?";
+let c = Cursor::new(text);
+
+let chunks: Vec<String> = StringChunker::new(c, "[ .,?]+")?
+    .map(|res| res.unwrap())
+    .collect();
+
+assert_eq!(
+    &chunks,
+    &["One", "two", "three", "four",
+    "Can", "I", "have", "a", "little", "more"].clone()
+);
+# Ok(())
+# }
+```
+*/
 #[derive(Debug)]
 pub struct StringChunker<R> {
     chunker: ByteChunker<R>,
@@ -350,6 +399,11 @@ pub struct StringChunker<R> {
 }
 
 impl<R> StringChunker<R> {
+    /**
+    Return a new [`StringChunker`] wrapping the given `Read`er that will
+    chunk its output by delimiting it with the supplied regular
+    expression pattern.
+    */
     pub fn new(source: R, delimiter: &str) -> Result<Self, RcErr> {
         let chunker = ByteChunker::new(source, delimiter)?;
         Ok(Self {
@@ -358,22 +412,40 @@ impl<R> StringChunker<R> {
         })
     }
 
-    pub fn with_buffer_size(&mut self, size: usize) -> &mut Self {
-        self.chunker.with_buffer_size(size);
+    /**
+    Builder-pattern method for setting the read buffer size.
+    Default size is 1024 bytes.
+    */
+    pub fn with_buffer_size(mut self, size: usize) -> Self {
+        self.chunker = self.chunker.with_buffer_size(size);
         self
     }
 
-    pub fn on_error(&mut self, response: ErrorResponse) -> &mut Self {
-        self.chunker.on_error(response);
+    /**
+    Builder-pattern method for controlling how the chunker behaves when
+    encountering an error reading from is `source`. The default value
+    is [`ErrorResponse::Halt`].
+    */
+    pub fn on_error(mut self, response: ErrorResponse) -> Self {
+        self.chunker = self.chunker.on_error(response);
         self
     }
 
-    pub fn with_match(&mut self, behavior: MatchDisposition) -> &mut Self {
-        self.chunker.with_match(behavior);
+    /**
+    Builder-pattern method for controlling what the chunker does with the
+    matched text. The default value is [`MatchDisposition::Drop`].
+    */
+    pub fn with_match(mut self, behavior: MatchDisposition) -> Self {
+        self.chunker = self.chunker.with_match(behavior);
         self
     }
 
-    pub fn on_utf8_error(&mut self, response: Utf8FailureMode) -> &mut Self {
+    /**
+    Builder-pattern method for controlling what the chunker does when
+    encountering non-UTF-8 data. The default value is
+    [`Utf8FailureMode::Fatal`].
+    */
+    pub fn on_utf8_error(mut self, response: Utf8FailureMode) -> Self {
         self.utf8_error_status = match response {
             Utf8FailureMode::Fatal => {
                 if self.utf8_error_status != Utf8ErrorStatus::Errored {
@@ -381,15 +453,44 @@ impl<R> StringChunker<R> {
                 } else {
                     Utf8ErrorStatus::Errored
                 }
-            },
+            }
             Utf8FailureMode::Lossy => Utf8ErrorStatus::Lossy,
             Utf8FailureMode::Continue => Utf8ErrorStatus::Continue,
             Utf8FailureMode::Ignore => Utf8ErrorStatus::Ignore,
         };
         self
     }
+
+    /**
+    Consumes the [`StringChunker`] and returns its wrapped `Read`er.
+    The `ByteChunker` may have read some data from its source that may not
+    yet have been returned or successfully matched; this data may be lost.
+    To retrieve that data, see [`StringChunker::into_innards`].
+    */
+    pub fn into_inner(self) -> R {
+        self.chunker.source
+    }
+
+    /**
+    Consumes the [`StringChunker`] and returns its wrapped `Read`er, as well
+    as any not-yet-processed data that has been read. If this unprocessed
+    data is unimportant, and you just want the reader back, use the more
+    traditional [`StringChunker::into_inner`].
+
+    Even if the underlying source is emitting valid UTF-8, it's possible for
+    incompletely-read data to be temporarily invalid, so this function
+    returns a byte vector instad of a [`String`].
+    */
+    pub fn into_innards(self) -> (R, Vec<u8>) {
+        (self.chunker.source, self.chunker.search_buff)
+    }
 }
 
+/**
+Like [`ByteChunker`], the [`StringChunker`] specifically doesn't supply an
+implementation of [`Iterator::size_hint`] because, in general, it's
+impossible to tell how much data is left in a reader.
+*/
 impl<R: Read> Iterator for StringChunker<R> {
     type Item = Result<String, RcErr>;
 
@@ -406,19 +507,17 @@ impl<R: Read> Iterator for StringChunker<R> {
 
             match self.utf8_error_status {
                 Utf8ErrorStatus::Errored => return None, // Shouldn't happen.
-                Utf8ErrorStatus::Lossy => return Some(Ok(
-                    String::from_utf8_lossy(&v).into()
-                )),
+                Utf8ErrorStatus::Lossy => return Some(Ok(String::from_utf8_lossy(&v).into())),
                 Utf8ErrorStatus::Ok => match String::from_utf8(v) {
                     Ok(s) => return Some(Ok(s)),
                     Err(e) => {
                         self.utf8_error_status = Utf8ErrorStatus::Errored;
                         return Some(Err(e.into()));
-                    },
+                    }
                 },
-                Utf8ErrorStatus::Continue => return Some(
-                    String::from_utf8(v).map_err(|e| e.into())
-                ),
+                Utf8ErrorStatus::Continue => {
+                    return Some(String::from_utf8(v).map_err(|e| e.into()))
+                }
                 Utf8ErrorStatus::Ignore => match String::from_utf8(v) {
                     Ok(s) => return Some(Ok(s)),
                     Err(_) => continue,
@@ -428,31 +527,72 @@ impl<R: Read> Iterator for StringChunker<R> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use std::{
-        io::Write,
         fs::File,
+        io::{Cursor, Write},
     };
 
     static TEST_PATH: &str = "test/cessen_issue.txt";
     static TEST_PATT: &str = r#"[A-Z]"#;
+    static PASSWD_PATH: &str = "test/passwd.txt";
+    static PASSWD_PATT: &str = r#"[:\r\n]+"#;
 
-    fn chunk_vec<'a>(re: &Regex, v: &'a [u8]) -> Vec<&'a [u8]> {
-        re.split(v).collect()
+    fn chunk_vec<'a>(re: &Regex, v: &'a [u8], mode: MatchDisposition) -> Vec<&'a [u8]> {
+        let mut u: Vec<&[u8]> = Vec::new();
+        let mut offs: usize = 0;
+        let mut prev_offs: usize = 0;
+        while let Some(m) = re.find_at(v, offs) {
+            let (start, end) = match mode {
+                MatchDisposition::Drop => {
+                    let start = offs;
+                    offs = m.end();
+                    (start, m.start())
+                }
+                MatchDisposition::Append => {
+                    let start = offs;
+                    offs = m.end();
+                    (start, m.end())
+                }
+                MatchDisposition::Prepend => {
+                    let start = prev_offs;
+                    offs = m.end();
+                    prev_offs = m.start();
+                    (start, m.start())
+                }
+            };
+
+            u.push(&v[start..end]);
+        }
+
+        match mode {
+            MatchDisposition::Drop | MatchDisposition::Append => {
+                u.push(&v[offs..]);
+            }
+            MatchDisposition::Prepend => {
+                u.push(&v[prev_offs..]);
+            }
+        }
+
+        u
     }
 
-    fn ref_slice_cmp<T, R, S>(a: &[R], b: &[S])
+    fn ref_slice_cmp<R, S>(a: &[R], b: &[S])
     where
-        T: PartialEq + Debug + ?Sized,
-        R: AsRef<T> + Debug,
-        S: AsRef<T> + Debug,
+        R: AsRef<[u8]> + Debug,
+        S: AsRef<[u8]> + Debug,
     {
         for (aref, bref) in a.iter().zip(b.iter()) {
-            assert_eq!(aref.as_ref(), bref.as_ref());
+            assert_eq!(
+                aref.as_ref(),
+                bref.as_ref(),
+                "left: {:?}\nright: {:?}\n",
+                &String::from_utf8_lossy(aref.as_ref()),
+                &String::from_utf8_lossy(bref.as_ref())
+            );
         }
     }
 
@@ -460,11 +600,36 @@ mod tests {
     fn basic_bytes() {
         let byte_vec = std::fs::read(TEST_PATH).unwrap();
         let re = Regex::new(TEST_PATT).unwrap();
-        let slice_vec = chunk_vec(&re, &byte_vec);
+        let slice_vec = chunk_vec(&re, &byte_vec, MatchDisposition::Drop);
 
         let f = File::open(TEST_PATH).unwrap();
         let chunker = ByteChunker::new(f, TEST_PATT).unwrap();
         let vec_vec: Vec<Vec<u8>> = chunker.map(|res| res.unwrap()).collect();
+
+        ref_slice_cmp(&vec_vec, &slice_vec);
+    }
+
+    #[test]
+    fn bytes_append_prepend() {
+        let byte_vec = std::fs::read(PASSWD_PATH).unwrap();
+        let re = Regex::new(PASSWD_PATT).unwrap();
+        let slice_vec = chunk_vec(&re, &byte_vec, MatchDisposition::Append);
+
+        let vec_vec: Vec<Vec<u8>> = ByteChunker::new(File::open(PASSWD_PATH).unwrap(), PASSWD_PATT)
+            .unwrap()
+            .with_match(MatchDisposition::Append)
+            .map(|res| res.unwrap())
+            .collect();
+
+        ref_slice_cmp(&vec_vec, &slice_vec);
+
+        let slice_vec = chunk_vec(&re, &byte_vec, MatchDisposition::Prepend);
+
+        let vec_vec: Vec<Vec<u8>> = ByteChunker::new(File::open(PASSWD_PATH).unwrap(), PASSWD_PATT)
+            .unwrap()
+            .with_match(MatchDisposition::Prepend)
+            .map(|res| res.unwrap())
+            .collect();
 
         ref_slice_cmp(&vec_vec, &slice_vec);
     }
@@ -481,14 +646,14 @@ mod tests {
             let mut source = File::open(source_path).unwrap();
             let mut buff: Vec<u8> = vec![0; N_BYTES];
             source.read_exact(&mut buff).unwrap();
-            let mut dest =  File::create(file_path).unwrap();
+            let mut dest = File::create(file_path).unwrap();
             dest.write_all(&buff).unwrap();
             dest.flush().unwrap();
             buff
         };
 
         let re = Regex::new(re_text).unwrap();
-        let slice_vec = chunk_vec(&re, &byte_vec);
+        let slice_vec = chunk_vec(&re, &byte_vec, MatchDisposition::Drop);
 
         let f = File::open(file_path).unwrap();
         let chunker = ByteChunker::new(f, re_text).unwrap();
@@ -501,7 +666,7 @@ mod tests {
     fn basic_string() {
         let byte_vec = std::fs::read(TEST_PATH).unwrap();
         let re = Regex::new(TEST_PATT).unwrap();
-        let slice_vec = chunk_vec(&re, &byte_vec);
+        let slice_vec = chunk_vec(&re, &byte_vec, MatchDisposition::Drop);
 
         let f = File::open(TEST_PATH).unwrap();
         let chunker = StringChunker::new(f, TEST_PATT).unwrap();
@@ -510,4 +675,14 @@ mod tests {
         ref_slice_cmp(&vec_vec, &slice_vec);
     }
 
+    #[test]
+    fn string_utf8_error() {
+        let bytes: &[u8] = &[130, 15];
+        let mut chunker = StringChunker::new(Cursor::new(bytes), TEST_PATT).unwrap();
+        assert!(matches!(chunker.next(), Some(Err(RcErr::Utf8(_)))));
+
+        let bytes = b"test one two";
+        let mut chunker = StringChunker::new(Cursor::new(bytes), TEST_PATT).unwrap();
+        assert!(matches!(chunker.next(), Some(Ok(_))));
+    }
 }

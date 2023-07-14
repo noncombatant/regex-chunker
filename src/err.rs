@@ -1,5 +1,5 @@
-/**!
-Error types.
+/*!
+Error types returned by the various chunkers.
 */
 use std::{
     error::Error,
@@ -7,13 +7,20 @@ use std::{
     string::FromUtf8Error,
 };
 
+/**
+Wraps various types of errors that can happen in the internals of a
+Chunker. The way Chunkers respond to and report these errors can be
+controlled through builder-pattern methods that take the
+[`ErrorResponse`](crate::ErrorResponse) and
+[`Utf8FailureMode`](crate::Utf8FailureMode) types.
+*/
 #[derive(Debug)]
 pub enum RcErr {
     /// Error returned during creation of a regex.
     Regex(regex::Error),
-    /// Error returned during reading from a *Chunker's source.
+    /// Error returned during reading from a `*Chunker`'s source.
     Read(std::io::Error),
-    /// Error returned by [`crate::StringChunker`] upon encountering 
+    /// Error returned by [`StringChunker`](crate::StringChunker) upon encountering 
     /// non-UTF-8 data.
     Utf8(FromUtf8Error),
 }

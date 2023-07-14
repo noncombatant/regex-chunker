@@ -1,7 +1,21 @@
 [package]
 name = "regex-chunker"
 version = "0.1.0"
+authors = ["Dan (d2718) <dx2718@gmail.com>"]
 edition = "2021"
+license-file = "LICENSE"
+description = """
+Iterate over the data in a `Read` type in a
+regular-expression-delimited way.
+"""
+homepage = "https://github.com/d2718/regex-chunker"
+repository = "https://github.com/d2718/regex-chunker"
+documentation = "https://docs.rs/dumb_cgi"
+readme = "README.md"
+categories = ["text-processing"]
+keywords = ["regex", "iterator", "read", "chunking"]
+
+autobins = false
 
 [dependencies]
 regex = "^1.9"
