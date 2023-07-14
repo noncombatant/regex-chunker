@@ -1,6 +1,6 @@
 [package]
 name = "regex-chunker"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Dan (d2718) <dx2718@gmail.com>"]
 edition = "2021"
 license-file = "LICENSE"
@@ -19,3 +19,6 @@ keywords = ["regex", "iterator", "read", "chunking"]
 
 [dependencies]
 regex = "^1.9"
+
+[dev-dependencies]
+reqwest = { version = "^0.11", features = ["blocking", "rustls-tls"] }

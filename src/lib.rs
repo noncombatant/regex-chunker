@@ -252,6 +252,12 @@ impl<R> ByteChunker<R> {
         std::mem::swap(&mut new_buff, &mut self.search_buff);
         Some(new_buff)
     }
+
+    // Function for wrapping types that need this information.
+    #[inline(always)]
+    fn buff_size(&self) -> usize {
+        return self.read_buff.len();
+    }
 }
 
 impl<R> Debug for ByteChunker<R> {
@@ -540,6 +546,8 @@ mod tests {
     static TEST_PATT: &str = r#"[A-Z]"#;
     static PASSWD_PATH: &str = "test/passwd.txt";
     static PASSWD_PATT: &str = r#"[:\r\n]+"#;
+    static HTTP_URL: &str = "https://www.zombo.com";
+    static HTTP_PATT: &str = r#">[^<]*"#;
 
     fn chunk_vec<'a>(re: &Regex, v: &'a [u8], mode: MatchDisposition) -> Vec<&'a [u8]> {
         let mut u: Vec<&[u8]> = Vec::new();
@@ -630,6 +638,22 @@ mod tests {
             .with_match(MatchDisposition::Prepend)
             .map(|res| res.unwrap())
             .collect();
+
+        ref_slice_cmp(&vec_vec, &slice_vec);
+    }
+
+    #[test]
+    fn bytes_http_request() {
+        use reqwest::blocking::Client;
+
+        let re = Regex::new(HTTP_PATT).unwrap();
+        let client = Client::new();
+        let re_response = client.get(HTTP_URL).send().unwrap().bytes().unwrap();
+        let slice_vec = chunk_vec(&re, &re_response, MatchDisposition::Drop);
+
+        let ch_response = client.get(HTTP_URL).send().unwrap();
+        let chunker = ByteChunker::new(ch_response, HTTP_PATT).unwrap();
+        let vec_vec: Vec<Vec<u8>> = chunker.map(|res| res.unwrap()).collect();
 
         ref_slice_cmp(&vec_vec, &slice_vec);
     }
