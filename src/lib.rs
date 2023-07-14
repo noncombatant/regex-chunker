@@ -6,7 +6,7 @@ use std::{
     io::{ErrorKind, Read},
 };
 
-use regex::{bytes, Regex};
+use regex::bytes::Regex;
 
 pub use crate::err::RcErr;
 
@@ -39,10 +39,11 @@ pub enum ErrorResponse {
 }
 
 /// Specify what the chunker should do with the matched text.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum MatchDisposition {
     /// Discard the matched text; only return the text
     /// _between_ matches. This is the default behavior.
+    #[default]
     Drop,
     /// Treat the matched text like the end of the preceding chunk.
     Append,
@@ -115,7 +116,7 @@ assert_eq!(
 */
 pub struct ByteChunker<R> {
     source: R,
-    fence: bytes::Regex,
+    fence: Regex,
     read_buff: Vec<u8>,
     search_buff: Vec<u8>,
     error_status: ErrorStatus,
@@ -138,13 +139,13 @@ impl<R> ByteChunker<R> {
     output by delimiting it with the supplied regex pattern.
     */
     pub fn new(source: R, delimiter: &str) -> Result<Self, RcErr> {
-        let fence = bytes::Regex::new(delimiter)?;
+        let fence = Regex::new(delimiter)?;
         Ok(Self {
             source, fence,
             read_buff: vec![0u8; DEFAULT_BUFFER_SIZE],
             search_buff: Vec::new(),
             error_status: ErrorStatus::Ok,
-            match_dispo: MatchDisposition::Drop,
+            match_dispo: MatchDisposition::default(),
             last_scan_matched: false,
             scan_start_offset: 0,
         })
@@ -317,7 +318,8 @@ impl<R: Read> Iterator for ByteChunker<R> {
 /// non-UTF-8 data.
 #[derive(Clone, Copy, Debug)]
 pub enum Utf8FailureMode {
-    /// Lossily convert to UTF-8 (with [`std::String::from_utf8_lossy`]).
+    /// Lossily convert to UTF-8 (with
+    /// [`std::string::String::from_utf8_lossy`]).
     Lossy,
     /// Report an error and stop reading (return `Some(Err(RcErr))` once
     /// and then `None` thereafter.
@@ -341,17 +343,91 @@ enum Utf8ErrorStatus {
 }
 impl Eq for Utf8ErrorStatus {}
 
+#[derive(Debug)]
 pub struct StringChunker<R> {
-    source: R,
-    fence: Regex,
-    read_buff: Vec<u8>,
-    search_buff: Vec<u8>,
-    error_status: ErrorStatus,
+    chunker: ByteChunker<R>,
     utf8_error_status: Utf8ErrorStatus,
-    match_dispo: MatchDisposition,
-    last_scan_matched: bool,
-    scan_start_offset; usize,
 }
+
+impl<R> StringChunker<R> {
+    pub fn new(source: R, delimiter: &str) -> Result<Self, RcErr> {
+        let chunker = ByteChunker::new(source, delimiter)?;
+        Ok(Self {
+            chunker,
+            utf8_error_status: Utf8ErrorStatus::Ok,
+        })
+    }
+
+    pub fn with_buffer_size(&mut self, size: usize) -> &mut Self {
+        self.chunker.with_buffer_size(size);
+        self
+    }
+
+    pub fn on_error(&mut self, response: ErrorResponse) -> &mut Self {
+        self.chunker.on_error(response);
+        self
+    }
+
+    pub fn with_match(&mut self, behavior: MatchDisposition) -> &mut Self {
+        self.chunker.with_match(behavior);
+        self
+    }
+
+    pub fn on_utf8_error(&mut self, response: Utf8FailureMode) -> &mut Self {
+        self.utf8_error_status = match response {
+            Utf8FailureMode::Fatal => {
+                if self.utf8_error_status != Utf8ErrorStatus::Errored {
+                    Utf8ErrorStatus::Ok
+                } else {
+                    Utf8ErrorStatus::Errored
+                }
+            },
+            Utf8FailureMode::Lossy => Utf8ErrorStatus::Lossy,
+            Utf8FailureMode::Continue => Utf8ErrorStatus::Continue,
+            Utf8FailureMode::Ignore => Utf8ErrorStatus::Ignore,
+        };
+        self
+    }
+}
+
+impl<R: Read> Iterator for StringChunker<R> {
+    type Item = Result<String, RcErr>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.utf8_error_status == Utf8ErrorStatus::Errored {
+            return None;
+        }
+
+        loop {
+            let v = match self.chunker.next()? {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            };
+
+            match self.utf8_error_status {
+                Utf8ErrorStatus::Errored => return None, // Shouldn't happen.
+                Utf8ErrorStatus::Lossy => return Some(Ok(
+                    String::from_utf8_lossy(&v).into()
+                )),
+                Utf8ErrorStatus::Ok => match String::from_utf8(v) {
+                    Ok(s) => return Some(Ok(s)),
+                    Err(e) => {
+                        self.utf8_error_status = Utf8ErrorStatus::Errored;
+                        return Some(Err(e.into()));
+                    },
+                },
+                Utf8ErrorStatus::Continue => return Some(
+                    String::from_utf8(v).map_err(|e| e.into())
+                ),
+                Utf8ErrorStatus::Ignore => match String::from_utf8(v) {
+                    Ok(s) => return Some(Ok(s)),
+                    Err(_) => continue,
+                },
+            }
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -362,32 +438,35 @@ mod tests {
         fs::File,
     };
 
-    fn chunk_vec<'a>(re: &bytes::Regex, v: &'a [u8]) -> Vec<&'a [u8]> {
+    static TEST_PATH: &str = "test/cessen_issue.txt";
+    static TEST_PATT: &str = r#"[A-Z]"#;
+
+    fn chunk_vec<'a>(re: &Regex, v: &'a [u8]) -> Vec<&'a [u8]> {
         re.split(v).collect()
     }
 
-    fn vec_slice_cmp(v: &[Vec<u8>], s: &[&[u8]]) {
-        for (vref, sref) in v.iter().zip(s.iter()) {
-            assert_eq!(vref, sref);
+    fn ref_slice_cmp<T, R, S>(a: &[R], b: &[S])
+    where
+        T: PartialEq + Debug + ?Sized,
+        R: AsRef<T> + Debug,
+        S: AsRef<T> + Debug,
+    {
+        for (aref, bref) in a.iter().zip(b.iter()) {
+            assert_eq!(aref.as_ref(), bref.as_ref());
         }
     }
 
     #[test]
     fn basic_bytes() {
-        let re_text = r#"[A-Z]"#;
-        let file_path = "test/cessen_issue.txt";
-
-        let byte_vec = std::fs::read(file_path).unwrap();
-        let re = bytes::Regex::new(re_text).unwrap();
+        let byte_vec = std::fs::read(TEST_PATH).unwrap();
+        let re = Regex::new(TEST_PATT).unwrap();
         let slice_vec = chunk_vec(&re, &byte_vec);
 
-        let f = File::open(file_path).unwrap();
-        let chunker = ByteChunker::new(f, re_text).unwrap();
+        let f = File::open(TEST_PATH).unwrap();
+        let chunker = ByteChunker::new(f, TEST_PATT).unwrap();
         let vec_vec: Vec<Vec<u8>> = chunker.map(|res| res.unwrap()).collect();
 
-        vec_slice_cmp(&vec_vec, &slice_vec);
-
-        println!("{:?}", &vec_vec);
+        ref_slice_cmp(&vec_vec, &slice_vec);
     }
 
     #[cfg(unix)]
@@ -408,14 +487,27 @@ mod tests {
             buff
         };
 
-        let re = bytes::Regex::new(re_text).unwrap();
+        let re = Regex::new(re_text).unwrap();
         let slice_vec = chunk_vec(&re, &byte_vec);
 
         let f = File::open(file_path).unwrap();
         let chunker = ByteChunker::new(f, re_text).unwrap();
         let vec_vec: Vec<Vec<u8>> = chunker.map(|res| res.unwrap()).collect();
 
-        vec_slice_cmp(&vec_vec, &slice_vec);
+        ref_slice_cmp(&vec_vec, &slice_vec);
+    }
+
+    #[test]
+    fn basic_string() {
+        let byte_vec = std::fs::read(TEST_PATH).unwrap();
+        let re = Regex::new(TEST_PATT).unwrap();
+        let slice_vec = chunk_vec(&re, &byte_vec);
+
+        let f = File::open(TEST_PATH).unwrap();
+        let chunker = StringChunker::new(f, TEST_PATT).unwrap();
+        let vec_vec: Vec<String> = chunker.map(|res| res.unwrap()).collect();
+
+        ref_slice_cmp(&vec_vec, &slice_vec);
     }
 
 }
