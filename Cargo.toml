@@ -20,5 +20,13 @@ keywords = ["regex", "iterator", "read", "chunking"]
 [dependencies]
 regex = "^1.9"
 
+bytes = { version = "^1.4", optional = true }
+tokio = { version = "^1.29", features = ["io-util"], optional = true }
+tokio-util = { version = "^0.7", features = ["codec"], optional = true }
+
 [dev-dependencies]
 reqwest = { version = "^0.11", features = ["blocking", "rustls-tls"] }
+
+[features]
+default = []
+async = ["dep:bytes", "dep:tokio", "dep:tokio-util"]

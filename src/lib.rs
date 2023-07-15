@@ -1,3 +1,5 @@
+#[cfg(feature = "async")]
+pub mod r#async;
 pub mod err;
 
 use std::{
