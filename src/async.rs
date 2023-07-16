@@ -5,7 +5,7 @@ types and implement
 [`Stream`](https://docs.rs/futures/latest/futures/stream/trait.Stream.html).
 */
 
-use bytes::BytesMut;
+use bytes::{BufMut, BytesMut};
 use regex::bytes::Regex;
 use tokio::io::AsyncRead;
 use tokio_util::codec::{Decoder, FramedRead};
@@ -14,7 +14,7 @@ use crate::{ErrorResponse, ErrorStatus, MatchDisposition, RcErr};
 
 struct ByteDecoder {
     fence: Regex,
-    error_status: ErrorStatus,
+    //error_status: ErrorStatus,
     match_dispo: MatchDisposition,
     scan_offset: usize,
 }
@@ -24,7 +24,26 @@ impl Decoder for ByteDecoder {
     type Error = RcErr;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        Ok(Some(vec![]))
+        let (start, end) = match self.fence.find_at(self.scan_offset, src.as_ref()) {
+            Some(m) => (m.start(), m.end()),
+            None => return Ok(None),
+        };
+        let length = end - start;
+
+        let new_buff = match self.match_dispo {
+            MatchDisposition::Drop => {
+                let new_buff: Vec<u8> = src.split_to(start).into();
+                src.advance(length);
+                new_buff
+            }
+            MatchDisposition::Append => src.split_to(end).into(),
+            MatchDisposition::Prepend => {
+                self.scan_offset = length;
+                src.split_to(start).into()
+            }
+        };
+
+        Ok(Some(new_buff))
     }
 }
 
@@ -37,7 +56,7 @@ impl<A: AsyncRead> ByteChunker<A> {
         let fence = Regex::new(pattern)?;
         let decoder = ByteDecoder {
             fence,
-            error_status: ErrorStatus::Ok,
+            //error_status: ErrorStatus::Ok,
             match_dispo: MatchDisposition::default(),
             scan_offset: 0,
         };
@@ -46,21 +65,21 @@ impl<A: AsyncRead> ByteChunker<A> {
         Ok(Self { freader })
     }
 
-    pub fn on_error(mut self, response: ErrorResponse) -> Self {
-        let mut d = self.freader.decoder_mut();
-        d.error_status = match response {
-            ErrorResponse::Halt => {
-                if d.error_status != ErrorStatus::Errored {
-                    ErrorStatus::Ok
-                } else {
-                    ErrorStatus::Errored
-                }
-            }
-            ErrorResponse::Continue => ErrorStatus::Continue,
-            ErrorResponse::Ignore => ErrorStatus::Ignore,
-        };
-        self
-    }
+    // pub fn on_error(mut self, response: ErrorResponse) -> Self {
+    //     let mut d = self.freader.decoder_mut();
+    //     d.error_status = match response {
+    //         ErrorResponse::Halt => {
+    //             if d.error_status != ErrorStatus::Errored {
+    //                 ErrorStatus::Ok
+    //             } else {
+    //                 ErrorStatus::Errored
+    //             }
+    //         }
+    //         ErrorResponse::Continue => ErrorStatus::Continue,
+    //         ErrorResponse::Ignore => ErrorStatus::Ignore,
+    //     };
+    //     self
+    // }
 
     pub fn with_match(mut self, behavior: MatchDisposition) -> Self {
         let mut d = self.freader.decoder_mut();
