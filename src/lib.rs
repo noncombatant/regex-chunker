@@ -1,5 +1,7 @@
+// #![feature(doc_cfg)]
+
 #[cfg(feature = "async")]
-pub mod r#async;
+pub mod stream;
 pub mod err;
 
 use std::{
