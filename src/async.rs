@@ -90,3 +90,28 @@ impl<A: AsyncRead> ByteChunker<A> {
         self
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::test::{
+        chunk_vec, ref_slice_cmp, HTTP_PATT, HTTP_URL, PASSWD_PATH, PASSWD_PATT, TEST_PATH,
+        TEST_PATT,
+    };
+
+    use tokio::{fs::File, io::AsyncReadExt};
+    use tokio_stream::StreamExt;
+
+    #[test]
+    fn basic_async() {
+        let byte_vec = std::fs::read(TEST_PATH).unwrap();
+        let re = Regex::new(TEST_PATT).unwrap();
+        let slice_vec = chunk_vec(&re, &byte_vec, MatchDisposition::Drop);
+
+        let f = File::open(TEST_PATH).unwrap();
+        let chunker = ByteChunker::new(f, TEST_PATT).unwrap();
+        let vec_vec: Vec<Vec<u8>> = chunker.map(|res| res.unwrap()).collect();
+
+        ref_slice_cmp(&vec_vec, &slice_vec);
+    }
+}

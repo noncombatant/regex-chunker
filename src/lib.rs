@@ -544,14 +544,14 @@ mod tests {
         io::{Cursor, Write},
     };
 
-    static TEST_PATH: &str = "test/cessen_issue.txt";
-    static TEST_PATT: &str = r#"[A-Z]"#;
-    static PASSWD_PATH: &str = "test/passwd.txt";
-    static PASSWD_PATT: &str = r#"[:\r\n]+"#;
-    static HTTP_URL: &str = "https://www.zombo.com";
-    static HTTP_PATT: &str = r#">[^<]*"#;
+    pub static TEST_PATH: &str = "test/cessen_issue.txt";
+    pub static TEST_PATT: &str = r#"[A-Z]"#;
+    pub static PASSWD_PATH: &str = "test/passwd.txt";
+    pub static PASSWD_PATT: &str = r#"[:\r\n]+"#;
+    pub static HTTP_URL: &str = "https://www.zombo.com";
+    pub static HTTP_PATT: &str = r#">[^<]*"#;
 
-    fn chunk_vec<'a>(re: &Regex, v: &'a [u8], mode: MatchDisposition) -> Vec<&'a [u8]> {
+    pub fn chunk_vec<'a>(re: &Regex, v: &'a [u8], mode: MatchDisposition) -> Vec<&'a [u8]> {
         let mut u: Vec<&[u8]> = Vec::new();
         let mut offs: usize = 0;
         let mut prev_offs: usize = 0;
@@ -590,7 +590,7 @@ mod tests {
         u
     }
 
-    fn ref_slice_cmp<R, S>(a: &[R], b: &[S])
+    pub fn ref_slice_cmp<R, S>(a: &[R], b: &[S])
     where
         R: AsRef<[u8]> + Debug,
         S: AsRef<[u8]> + Debug,
