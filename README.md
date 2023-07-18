@@ -30,16 +30,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 ```
 
-See the crate documentation for more details.
+The `async` feature enables the `stream` submodule, which contains an
+asynchronous version of `ByteChunker` that wraps an
+[`tokio::io::AsyncRead`](https://docs.rs/tokio/latest/tokio/io/trait.AsyncRead.html)
+type and produces a
+[`Stream`](https://docs.rs/futures-core/0.3.28/futures_core/stream/trait.Stream.html)
+of byte chunks.
+
+There isn't yet an async `StringChunker`. The next update will introduce an
+"adaptor" trait for transforming a the output of a ByteChunker into an
+arbitrary type; the `StringChunker` will then be reimplemented that way.
 
 ## Unanswered Questions and Stuff To do
 
 This is, as of yet, an essentially naive implementation. What can be done
 to optimize performance?
 
-The next major version will support `async` versions of the `*Chunker`
-types that read from
-[`tokio::io::AsyncRead`](https://docs.rs/tokio/latest/tokio/io/trait.AsyncRead.html)
-types and produce a
-[`Stream`](https://docs.rs/futures-core/0.3.28/futures_core/stream/trait.Stream.html)
-of chunks.
