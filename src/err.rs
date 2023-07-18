@@ -1,11 +1,7 @@
 /*!
 Error types returned by the various chunkers.
 */
-use std::{
-    error::Error,
-    fmt::Display,
-    string::FromUtf8Error,
-};
+use std::{error::Error, fmt::Display, string::FromUtf8Error};
 
 /**
 Wraps various types of errors that can happen in the internals of a
@@ -20,7 +16,7 @@ pub enum RcErr {
     Regex(regex::Error),
     /// Error returned during reading from a `*Chunker`'s source.
     Read(std::io::Error),
-    /// Error returned by [`StringChunker`](crate::StringChunker) upon encountering 
+    /// Error returned by [`StringChunker`](crate::StringChunker) upon encountering
     /// non-UTF-8 data.
     Utf8(FromUtf8Error),
 }
@@ -53,7 +49,7 @@ impl From<FromUtf8Error> for RcErr {
     }
 }
 
-impl Error  for RcErr {
+impl Error for RcErr {
     fn source<'a>(&'a self) -> Option<&(dyn Error + 'static)> {
         match self {
             RcErr::Regex(e) => Some(e),

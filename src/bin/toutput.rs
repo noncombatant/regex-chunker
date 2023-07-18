@@ -1,10 +1,7 @@
 /**!
 Generating output for tests and documentation.
 */
-use std::{
-    error::Error,
-    io::Cursor,
-};
+use std::{error::Error, io::Cursor};
 
 use regex_chunker::{ByteChunker, MatchDisposition};
 
@@ -17,14 +14,15 @@ fn example() -> Result<(), Box<dyn Error>> {
         .map(|res| {
             let v = res.unwrap();
             String::from_utf8(v).unwrap()
-        }).collect();
-    
+        })
+        .collect();
+
     println!("{:?}", &chunks);
 
     assert_eq!(
         &chunks,
-        &["One, ", "two, ", "three, ", "four. ",
-        "Can ", "I ", "have ", "a ", "little ", "more?"].clone()
+        &["One, ", "two, ", "three, ", "four. ", "Can ", "I ", "have ", "a ", "little ", "more?"]
+            .clone()
     );
 
     Ok(())

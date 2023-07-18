@@ -10,13 +10,13 @@ use std::{
     task::{Context, Poll},
 };
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BytesMut};
 use regex::bytes::Regex;
 use tokio::io::AsyncRead;
-use tokio_stream::{Stream, StreamExt};
+use tokio_stream::Stream;
 use tokio_util::codec::{Decoder, FramedRead};
 
-use crate::{ErrorResponse, ErrorStatus, MatchDisposition, RcErr};
+use crate::{MatchDisposition, RcErr};
 
 struct ByteDecoder {
     fence: Regex,
@@ -72,7 +72,7 @@ trait.
 
 This async version of the base `ByteChunker` is less flexible in how it
 handles errors; you'll get errors when Tokio's underlying black magic
-returns them. 
+returns them.
 */
 pub struct ByteChunker<A: AsyncRead> {
     freader: FramedRead<A, ByteDecoder>,
@@ -123,8 +123,13 @@ mod tests {
         TEST_PATT,
     };
 
-    use tokio::{fs::File, io::AsyncReadExt};
+    use std::process::Stdio;
+
+    use tokio::{fs::File, io::AsyncReadExt, process::Command};
     use tokio_stream::StreamExt;
+
+    static SOURCE: &str = "target/debug/slowsource";
+    static SOURCE_ARGS: &[&str] = &[TEST_PATH, "0.0", "0.1"];
 
     #[tokio::test]
     async fn basic_async() {
@@ -135,6 +140,25 @@ mod tests {
         let f = File::open(TEST_PATH).await.unwrap();
         let chunker = ByteChunker::new(f, TEST_PATT).unwrap();
         let vec_vec: Vec<Vec<u8>> = chunker.map(|res| res.unwrap()).collect().await;
+
+        ref_slice_cmp(&vec_vec, &slice_vec);
+    }
+
+    #[tokio::test]
+    async fn slow_async() {
+        let byte_vec = std::fs::read(TEST_PATH).unwrap();
+        let re = Regex::new(TEST_PATT).unwrap();
+        let slice_vec = chunk_vec(&re, &byte_vec, MatchDisposition::Drop);
+
+        let mut child = Command::new(SOURCE)
+            .args(SOURCE_ARGS)
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let chunker = ByteChunker::new(stdout, TEST_PATT).unwrap();
+        let vec_vec: Vec<Vec<u8>> = chunker.map(|res| res.unwrap()).collect().await;
+        child.wait().await.unwrap();
 
         ref_slice_cmp(&vec_vec, &slice_vec);
     }

@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use regex_chunker::ByteChunker;
+use regex_chunker::{ByteChunker, MatchDisposition};
 
 const DEFAULT_LO: f64 = 0.0;
 const DEFAULT_HI: f64 = 1.0;
@@ -66,7 +66,7 @@ fn getopts() -> Result<(Box<dyn Read>, RanDur), Box<dyn Error>> {
 fn main() -> Result<(), Box<dyn Error>> {
     let (src, durs) = getopts()?;
 
-    let chunker = ByteChunker::new(src, RE)?;
+    let chunker = ByteChunker::new(src, RE)?.with_match(MatchDisposition::Append);
 
     for chunk in chunker {
         let chunk = chunk?;

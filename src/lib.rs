@@ -1,8 +1,8 @@
 // #![feature(doc_cfg)]
 
+pub mod err;
 #[cfg(feature = "async")]
 pub mod stream;
-pub mod err;
 
 use std::{
     fmt::{Debug, Formatter},
