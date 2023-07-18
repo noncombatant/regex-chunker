@@ -12,3 +12,6 @@
 
 # This test file needn't persist between tests.
 /test/random.dat
+
+# We don't want any VS Code garbaje.
+/.vscode
