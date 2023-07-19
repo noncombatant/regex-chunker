@@ -1,7 +1,49 @@
-// #![feature(doc_cfg)]
+#![feature(doc_cfg)]
+
+/*!
+The centerpiece of this crate is the [`ByteChunker`], which takes a regular
+expression and wraps a [`Read`] type, becoming an iterator over the bytes
+read from the wrapped type, yielding chunks delimited by the supplied
+regular expression.
+
+The example program below uses a `ByteChunker` to do a crude word
+tally on text coming in on the standard input.
+
+```rust
+use std::{collections::BTreeMap, error::Error};
+use regex_chunker::ByteChunker;
+  
+fn main() -> Result<(), Box<dyn Error>> {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    let stdin = std::io::stdin();
+    
+    // The regex is a stab at something matching strings of
+    // "between-word" characters in general English text.
+    let chunker = ByteChunker::new(stdin, r#"[ "\r\n.,!?:;/]+"#)?;
+    for chunk in chunker {
+        let word = String::from_utf8_lossy(&chunk?).to_lowercase();
+        *counts.entry(word).or_default() += 1;
+    }
+
+    println!("{:#?}", &counts);
+    Ok(())
+}
+```
+
+Enabling the `async` feature also exposes the [`stream`] module, which
+features an async version of the `ByteChunker`, wrapping an
+[`AsyncRead`](https://docs.rs/tokio/latest/tokio/io/trait.AsyncRead.html)
+and implementing
+[`Stream`](https://docs.rs/futures-core/0.3.28/futures_core/stream/trait.Stream.html).
+
+(This also pulls in several crates of
+[`tokio`](https://docs.rs/tokio/latest/tokio/index.html) machinery, which is why
+it's behind a feature flag.)
+*/
 
 pub mod err;
-#[cfg(feature = "async")]
+#[cfg(any(feature = "async", doc))]
+#[doc(cfg(feature = "async"))]
 pub mod stream;
 
 use std::{
@@ -258,6 +300,7 @@ impl<R> ByteChunker<R> {
     }
 
     // Function for wrapping types that need this information.
+    #[allow(dead_code)]
     #[inline(always)]
     fn buff_size(&self) -> usize {
         return self.read_buff.len();

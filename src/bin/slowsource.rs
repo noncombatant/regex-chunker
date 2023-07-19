@@ -87,7 +87,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 #[cfg(not(feature = "test"))]
 fn main() {
     const MSG: &str =
-r#""The slowsource binary must be built with feature \"test\" enabled.
+r#"
+The slowsource binary must be built with feature \"test\" enabled.
 Try re-running with `cargo build --features test`.
 "#;
     println!("{}", MSG);

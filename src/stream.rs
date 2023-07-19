@@ -98,7 +98,7 @@ impl<A: AsyncRead> ByteChunker<A> {
     /// Builder-pattern for controlling what the chunker does with the
     /// matched text; default value is [`MatchDisposition::Drop`].
     pub fn with_match(mut self, behavior: MatchDisposition) -> Self {
-        let mut d = self.freader.decoder_mut();
+        let d = self.freader.decoder_mut();
         d.match_dispo = behavior;
         if matches!(behavior, MatchDisposition::Drop | MatchDisposition::Append) {
             d.scan_offset = 0;

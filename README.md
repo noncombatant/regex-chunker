@@ -10,8 +10,8 @@ regular expression. The following example reads from the standard input
 and prints word counts:
 
 ```rust
-  use std::collections::BTreeMap;
-  use regex_chunker::ByteChunker;
+use std::collections::BTreeMap;
+use regex_chunker::ByteChunker;
   
 fn main() -> Result<(), Box<dyn Error>> {
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
@@ -46,3 +46,18 @@ arbitrary type; the `StringChunker` will then be reimplemented that way.
 This is, as of yet, an essentially naive implementation. What can be done
 to optimize performance?
 
+Add a trait to arbitrarily transform the output of the `ByteChunker`,
+expose it, and re-implement the `StringChunker` (including adding an async
+version) with it.
+
+## Running The Tests
+
+If you want to run the tests, you need to first (debug) build
+`src/bin/slowsource.rs` with the `test` feature enabled:
+
+```sh
+$ cargo build --bin slowsource --features test
+```
+
+Some of the [`stream`] module tests run it in a subprocess and use it as
+a source of bytes.
