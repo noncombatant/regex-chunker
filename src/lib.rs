@@ -41,6 +41,8 @@ and implementing
 it's behind a feature flag.)
 */
 
+mod adapter;
+pub use adapter::*;
 pub mod err;
 #[cfg(any(feature = "async", doc))]
 #[doc(cfg(feature = "async"))]
