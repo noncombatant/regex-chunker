@@ -1,3 +1,5 @@
+#![cfg(feature = "test")]
+
 /*!
 Program that produces chunks of bytes slowly in order to test the
 async chunkers.
