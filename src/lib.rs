@@ -263,6 +263,17 @@ impl<R> ByteChunker<R> {
         (self.source, self.search_buff)
     }
 
+    /**
+    Creates a [`CustomChunker`] by combining this `ByteChunker` with an
+    `Adapter` type.
+    */
+    pub fn with_adapter<A>(self, adapter: A) -> CustomChunker<R, A> {
+        CustomChunker {
+            chunker: self,
+            adapter,
+        }
+    }
+
     /*
     Search the search_buffer for a match; if found, return the next chunk
     of bytes to be returned from ]`Iterator::next`].
@@ -393,40 +404,68 @@ impl<R: Read> Iterator for ByteChunker<R> {
 
 /// Type for specifying a [`StringChunker`]'s behavior upon encountering
 /// non-UTF-8 data.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum Utf8FailureMode {
     /// Lossily convert to UTF-8 (with
     /// [`String::from_utf8_lossy`](std::string::String::from_utf8_lossy)).
     Lossy,
     /// Report an error and stop reading (return `Some(Err(RcErr))` once
     /// and then `None` thereafter.
+    #[default]
     Fatal,
     /// Report an error but attempt to continue (keep returning
     /// `Some(Err(RcErr))` until the it starts reading UTF-8 from the
     /// `source` again.
     Continue,
-    /// Ignore the error and continue trying to read from the `source`
-    /// until it encounters UTF-8 again.
-    Ignore,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum Utf8ErrorStatus {
+    #[default]
     Ok,
     Errored,
     Lossy,
     Continue,
-    Ignore,
 }
 impl Eq for Utf8ErrorStatus {}
 
+#[derive(Debug)]
+struct StringAdapter {
+    status: Utf8ErrorStatus,
+}
+
+impl Adapter for StringAdapter {
+    type Item = Result<String, RcErr>;
+
+    fn adapt(&mut self, v: Option<Result<Vec<u8>, RcErr>>) -> Option<Self::Item> {
+        match (self.status, v) {
+            (Utf8ErrorStatus::Errored, _) => None,
+            (_, None) => None,
+            (_, Some(Err(e))) => Some(Err(e)),
+            (Utf8ErrorStatus::Lossy, Some(Ok(v))) =>
+                Some(Ok(String::from_utf8_lossy(&v).into())),
+            (Utf8ErrorStatus::Ok, Some(Ok(v))) => match String::from_utf8(v) {
+                Ok(s) => Some(Ok(s)),
+                Err(e) => {
+                    self.status = Utf8ErrorStatus::Errored;
+                    Some(Err(e.into()))
+                },
+            },
+            (Utf8ErrorStatus::Continue, Some(Ok(v))) => match String::from_utf8(v) {
+                Ok(s) => Some(Ok(s)),
+                Err(e) => Some(Err(e.into())),
+            }
+        }
+    }
+}
+
 /**
 The `StringChunker` operates like the [`ByteChunker`], except instead of
-returning `Vec<u8>`s, it returns `Strings`. It also has an extra parameter
+returning `Vec<u8>`s, it returns [`String`]s. It also has an extra parameter
 of operation, [`Utf8FailureMode`], which controls how it reacts when
 reading data that is not valid UTF-8.
 
-```
+```rust
 use regex_chunker::StringChunker;
 use std::io::Cursor;
 
@@ -446,139 +485,68 @@ assert_eq!(
 # Ok(())
 # }
 ```
+
+Several of the builder-pattern methods function identically to their
+[`ByteChunker`] counterparts.
+
 */
-#[derive(Debug)]
 pub struct StringChunker<R> {
-    chunker: ByteChunker<R>,
-    utf8_error_status: Utf8ErrorStatus,
+    chunker: CustomChunker<R, StringAdapter>,
 }
 
 impl<R> StringChunker<R> {
-    /**
-    Return a new [`StringChunker`] wrapping the given `Read`er that will
-    chunk its output by delimiting it with the supplied regular
-    expression pattern.
-    */
-    pub fn new(source: R, delimiter: &str) -> Result<Self, RcErr> {
-        let chunker = ByteChunker::new(source, delimiter)?;
-        Ok(Self {
-            chunker,
-            utf8_error_status: Utf8ErrorStatus::Ok,
+    pub fn new(source: R, delimiter: &str) -> Result<StringChunker<R>, RcErr> {
+        Ok(StringChunker {
+            chunker: ByteChunker::new(source, delimiter)?
+                .with_adapter(StringAdapter { status: Utf8ErrorStatus::default() })
         })
     }
 
-    /**
-    Builder-pattern method for setting the read buffer size.
-    Default size is 1024 bytes.
-    */
-    pub fn with_buffer_size(mut self, size: usize) -> Self {
-        self.chunker = self.chunker.with_buffer_size(size);
-        self
+    pub fn with_buffer_size(self, size: usize) -> Self {
+        let (mut c, a) = self.chunker.into_innards();
+        c = c.with_buffer_size(size);
+        StringChunker { chunker: c.with_adapter(a) }
+    }
+
+    pub fn on_error(self, response: ErrorResponse) -> Self {
+        let (mut c, a) = self.chunker.into_innards();
+        c = c.on_error(response);
+        StringChunker { chunker: c.with_adapter(a) }
+    }
+
+    pub fn with_match(self, behavior: MatchDisposition) -> Self {
+        let (mut c, a) = self.chunker.into_innards();
+        c = c.with_match(behavior);
+        StringChunker { chunker: c.with_adapter(a) }
     }
 
     /**
-    Builder-pattern method for controlling how the chunker behaves when
-    encountering an error reading from is `source`. The default value
-    is [`ErrorResponse::Halt`].
-    */
-    pub fn on_error(mut self, response: ErrorResponse) -> Self {
-        self.chunker = self.chunker.on_error(response);
-        self
-    }
-
-    /**
-    Builder-pattern method for controlling what the chunker does with the
-    matched text. The default value is [`MatchDisposition::Drop`].
-    */
-    pub fn with_match(mut self, behavior: MatchDisposition) -> Self {
-        self.chunker = self.chunker.with_match(behavior);
-        self
-    }
-
-    /**
-    Builder-pattern method for controlling what the chunker does when
+    Builder-pattern method for controlling how the chunker responds when
     encountering non-UTF-8 data. The default value is
     [`Utf8FailureMode::Fatal`].
-    */
-    pub fn on_utf8_error(mut self, response: Utf8FailureMode) -> Self {
-        self.utf8_error_status = match response {
+     */
+    pub fn on_utf8_error(self, response: Utf8FailureMode) -> Self {
+        let (c, mut adapter) = self.chunker.into_innards();
+        adapter.status = match response {
             Utf8FailureMode::Fatal => {
-                if self.utf8_error_status != Utf8ErrorStatus::Errored {
+                if adapter.status != Utf8ErrorStatus::Errored {
                     Utf8ErrorStatus::Ok
                 } else {
                     Utf8ErrorStatus::Errored
                 }
-            }
+            },
             Utf8FailureMode::Lossy => Utf8ErrorStatus::Lossy,
             Utf8FailureMode::Continue => Utf8ErrorStatus::Continue,
-            Utf8FailureMode::Ignore => Utf8ErrorStatus::Ignore,
         };
-        self
-    }
-
-    /**
-    Consumes the [`StringChunker`] and returns its wrapped `Read`er.
-    The `ByteChunker` may have read some data from its source that may not
-    yet have been returned or successfully matched; this data may be lost.
-    To retrieve that data, see [`StringChunker::into_innards`].
-    */
-    pub fn into_inner(self) -> R {
-        self.chunker.source
-    }
-
-    /**
-    Consumes the [`StringChunker`] and returns its wrapped `Read`er, as well
-    as any not-yet-processed data that has been read. If this unprocessed
-    data is unimportant, and you just want the reader back, use the more
-    traditional [`StringChunker::into_inner`].
-
-    Even if the underlying source is emitting valid UTF-8, it's possible for
-    incompletely-read data to be temporarily invalid, so this function
-    returns a byte vector instad of a [`String`].
-    */
-    pub fn into_innards(self) -> (R, Vec<u8>) {
-        (self.chunker.source, self.chunker.search_buff)
+        StringChunker { chunker: c.with_adapter(adapter) }
     }
 }
 
-/**
-Like [`ByteChunker`], the [`StringChunker`] specifically doesn't supply an
-implementation of [`Iterator::size_hint`] because, in general, it's
-impossible to tell how much data is left in a reader.
-*/
 impl<R: Read> Iterator for StringChunker<R> {
     type Item = Result<String, RcErr>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.utf8_error_status == Utf8ErrorStatus::Errored {
-            return None;
-        }
-
-        loop {
-            let v = match self.chunker.next()? {
-                Ok(v) => v,
-                Err(e) => return Some(Err(e)),
-            };
-
-            match self.utf8_error_status {
-                Utf8ErrorStatus::Errored => return None, // Shouldn't happen.
-                Utf8ErrorStatus::Lossy => return Some(Ok(String::from_utf8_lossy(&v).into())),
-                Utf8ErrorStatus::Ok => match String::from_utf8(v) {
-                    Ok(s) => return Some(Ok(s)),
-                    Err(e) => {
-                        self.utf8_error_status = Utf8ErrorStatus::Errored;
-                        return Some(Err(e.into()));
-                    }
-                },
-                Utf8ErrorStatus::Continue => {
-                    return Some(String::from_utf8(v).map_err(|e| e.into()))
-                }
-                Utf8ErrorStatus::Ignore => match String::from_utf8(v) {
-                    Ok(s) => return Some(Ok(s)),
-                    Err(_) => continue,
-                },
-            }
-        }
+        self.chunker.next()
     }
 }
 

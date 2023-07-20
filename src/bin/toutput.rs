@@ -1,9 +1,11 @@
+#![allow(dead_code)]
+
 /**!
 Generating output for tests and documentation.
 */
 use std::{error::Error, io::Cursor};
 
-use regex_chunker::{ByteChunker, MatchDisposition};
+use regex_chunker::{Adapter, ByteChunker, RcErr, MatchDisposition};
 
 fn example() -> Result<(), Box<dyn Error>> {
     let text = b"One, two, three, four. Can I have a little more?";
@@ -28,8 +30,52 @@ fn example() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn adapter_example() -> Result<(), Box<dyn Error>> {
+
+struct LineCounter {
+    lines: usize,
+}
+
+impl Adapter for LineCounter {
+    type Item = Result<Vec<u8>, RcErr>;
+
+    fn adapt(&mut self, v: Option<Result<Vec<u8>, RcErr>>) -> Option<Self::Item> {
+        match v {
+            Some(Ok(v)) => {
+                self.lines += 1;
+                Some(Ok(v))
+            },
+            x => x,
+        }
+    }
+}
+
+let text =
+br#"What's he that wishes so?
+My cousin Westmoreland? No, my fair cousin:
+If we are mark'd to die, we are enow
+To do our country loss; and if to live,
+The fewer men, the greater share of honour."#;
+
+let c = Cursor::new(text);
+
+let mut chunker = ByteChunker::new(c, r#"\r?\n"#)?
+    .with_adapter(LineCounter { lines: 0 });
+
+let _: Vec<String> = (&mut chunker).map(|res| {
+    let v: Vec<u8> = res.unwrap();
+    String::from_utf8(v).unwrap()
+}).collect();
+
+println!("{}", &chunker.get_adapter().lines);
+
+Ok(())
+
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
-    example()?;
+    //example()?;
+    adapter_example()?;
 
     Ok(())
 }
