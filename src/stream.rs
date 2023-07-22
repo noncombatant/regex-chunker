@@ -18,7 +18,7 @@ use tokio::io::AsyncRead;
 use tokio_stream::Stream;
 use tokio_util::codec::{Decoder, FramedRead};
 
-use crate::{MatchDisposition, RcErr};
+use crate::{MatchDisposition, RcErr, StringAdapter};
 
 struct ByteDecoder {
     fence: Regex,
@@ -76,15 +76,15 @@ This async version of the base `ByteChunker` is less flexible in how it
 handles errors; you'll get errors when Tokio's underlying black magic
 returns them.
 */
-pub struct ByteChunker<A: AsyncRead> {
-    freader: FramedRead<A, ByteDecoder>,
+pub struct ByteChunker<R: AsyncRead> {
+    freader: FramedRead<R, ByteDecoder>,
 }
 
-impl<A: AsyncRead> ByteChunker<A> {
+impl<R: AsyncRead> ByteChunker<R> {
     /// Return a new [`ByteChunker`] wrapping the given async reader that
     /// will chunk its output be delimiting it with the given regular
     /// expression pattern.
-    pub fn new(source: A, pattern: &str) -> Result<Self, RcErr> {
+    pub fn new(source: R, pattern: &str) -> Result<Self, RcErr> {
         let fence = Regex::new(pattern)?;
         let decoder = ByteDecoder {
             fence,
@@ -95,6 +95,13 @@ impl<A: AsyncRead> ByteChunker<A> {
 
         let freader = FramedRead::new(source, decoder);
         Ok(Self { freader })
+    }
+
+    pub fn with_adapter<A>(self, adapter: A) -> CustomChunker<R, A> {
+        CustomChunker {
+            chunker: self,
+            adapter,
+        }
     }
 
     /// Builder-pattern for controlling what the chunker does with the
@@ -114,6 +121,18 @@ impl<A: AsyncRead + Unpin> Stream for ByteChunker<A> {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Pin::new(&mut self.freader).poll_next(cx)
+    }
+}
+
+pub struct StringChunker<R: AsyncRead> {
+    chunker: CustomChunker<R, StringAdapter>,
+}
+
+impl<R: AsyncRead + Unpin> Stream for StringChunker<R> {
+    type Item = Result<String, RcErr>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Pin::new(&mut self.chunker).poll_next(cx)
     }
 }
 

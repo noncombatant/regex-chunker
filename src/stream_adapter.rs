@@ -9,17 +9,23 @@ use std::{
 use tokio::io::AsyncRead;
 use tokio_stream::Stream;
 
-use crate::{RcErr, stream::*};
+use crate::{
+    Adapter,
+    RcErr,
+    stream::*,
+    StringAdapter,
+    Utf8ErrorStatus,
+};
 
-pub trait Adapter {
+/* pub trait Adapter {
     type Item;
 
     fn adapt(&mut self, v: Option<Result<Vec<u8>, RcErr>>) -> Option<Self::Item>;
-}
+} */
 
 pub struct CustomChunker<R: AsyncRead, A> {
-    chunker: ByteChunker<R>,
-    adapter: A,
+    pub(super) chunker: ByteChunker<R>,
+    pub(super) adapter: A,
 }
 
 impl<R: AsyncRead, A> CustomChunker<R, A> {
@@ -49,4 +55,3 @@ where
         }
     }
 }
-
