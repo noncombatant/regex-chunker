@@ -5,7 +5,6 @@ Asynchronous analogs to the base `*Chunker` types that wrap
 types and implement
 [`Stream`](https://docs.rs/futures/latest/futures/stream/trait.Stream.html).
 */
-pub use crate::stream_adapter::*;
 
 use std::{
     pin::Pin,
@@ -18,7 +17,7 @@ use tokio::io::AsyncRead;
 use tokio_stream::Stream;
 use tokio_util::codec::{Decoder, FramedRead};
 
-use crate::{MatchDisposition, RcErr, StringAdapter};
+use crate::{Adapter, MatchDisposition, RcErr};
 
 struct ByteDecoder {
     fence: Regex,
@@ -124,15 +123,74 @@ impl<A: AsyncRead + Unpin> Stream for ByteChunker<A> {
     }
 }
 
-pub struct StringChunker<R: AsyncRead> {
-    chunker: CustomChunker<R, StringAdapter>,
+/**
+The async analog to the base crate's
+[`CustomChunker`](`crate::CustomChunker`).
+It takes an [`Adapter`] and yields chunks based on the `Adapter`'s
+transformation.
+
+```rust
+# use std::error::Error;
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn Error>> {
+    use regex_chunker::{
+        stream::ByteChunker,
+        StringAdapter,
+    };
+    use tokio_stream::StreamExt;
+    use std::io::Cursor;
+
+    let text = b"One, two, three four. Can I have a little more?";
+    let c = Cursor::new(text);
+
+    let chunks: Vec<_> = ByteChunker::new(c, "[ .,?]+")?
+        .with_adapter(StringAdapter::default())
+        .map(|res| res.unwrap())
+        .collect().await;
+
+    assert_eq!(
+        &chunks,
+        &[
+            "One", "two", "three", "four",
+            "Can", "I", "have", "a", "little", "more"
+        ].clone()
+    );
+#   Ok(()) }
+*/
+pub struct CustomChunker<R: AsyncRead, A> {
+    chunker: ByteChunker<R>,
+    adapter: A,
 }
 
-impl<R: AsyncRead + Unpin> Stream for StringChunker<R> {
-    type Item = Result<String, RcErr>;
+impl<R: AsyncRead, A> CustomChunker<R, A> {
+    /// Consumes the [`CustomChunker`] and returns the underlying
+    /// [`ByteChunker`] and [`Adapter`].
+    pub fn into_innards(self) -> (ByteChunker<R>, A) {
+        (self.chunker, self.adapter)
+    }
+
+    /// Get a reference to the underlying [`Adapter`].
+    pub fn get_adapter(&self) -> &A { &self.adapter }
+
+    /// Get a mutable reference to the underlying [`Adapter`].
+    pub fn get_adapter_mut(&mut self) -> &mut A { &mut self.adapter }
+}
+
+impl<R: AsyncRead, A> Unpin for CustomChunker<R, A> {}
+
+impl<R, A> Stream for CustomChunker<R, A>
+where
+    R: AsyncRead + Unpin,
+    A: Adapter
+{
+    type Item = A::Item;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Pin::new(&mut self.chunker).poll_next(cx)
+        let p = Pin::new(&mut self.chunker).poll_next(cx);
+        match p {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(x) => Poll::Ready(self.adapter.adapt(x)),
+        }
     }
 }
 

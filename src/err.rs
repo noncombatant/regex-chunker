@@ -16,8 +16,9 @@ pub enum RcErr {
     Regex(regex::Error),
     /// Error returned during reading from a `*Chunker`'s source.
     Read(std::io::Error),
-    /// Error returned by [`StringChunker`](crate::StringChunker) upon encountering
-    /// non-UTF-8 data.
+    /// Error returned by a
+    // [`CustomChunker<StringAdapter>`](crate::StringChunker)
+    /// upon encountering non-UTF-8 data.
     Utf8(FromUtf8Error),
 }
 

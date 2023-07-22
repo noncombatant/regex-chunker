@@ -1,11 +1,15 @@
 /*!
 The trait used for types that transform the output of a Chunker.
 */
-use super::*;
+use crate::{
+    ctrl::Utf8FailureMode,
+    RcErr,
+};
 
 /**
-Trait used to implement a [`CustomChunker`] by transforming the
-output of a [`ByteChunker`]. The [`StringChunker`] is implemented this way.
+Trait used to implement a [`CustomChunker`](crate::CustomChunker) by
+transforming the output of a [`ByteChunker`](crate::ByteChunker).
+
 This is more powerful than simply calling 
 [`.map()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.map),
 [`.map_while()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.map_while),
@@ -62,52 +66,19 @@ println!("{}", &chunker.get_adapter().lines);
 */
 pub trait Adapter {
     /// The type into which it transforms the values returned by the
-    /// [`ByteChunker`]'s `Iterator` implementation.
+    /// [`ByteChunker`](crate::ByteChunker)'s `Iterator` implementation.
     type Item;
 
     /// Convert the `ByteChunker`'s output.
     fn adapt(&mut self, v: Option<Result<Vec<u8>, RcErr>>) -> Option<Self::Item>;
 }
 
-pub struct CustomChunker<R, A> {
-    pub(super) chunker: ByteChunker<R>,
-    pub(super) adapter: A,
-}
-
-impl<R, A> CustomChunker<R, A> {
-    /// Consume this `CustomChunker` and return the underlying
-    /// [`ByteChunker`] and [`Adapter`].
-    pub fn into_innards(self) -> (ByteChunker<R>, A) {
-        (self.chunker, self.adapter)
-    }
-
-    /// Get a reference to the underlying [`Adapter`].
-    pub fn get_adapter(&self) -> &A { &self.adapter }
-
-    /// Get a mutable reference to the underlying [`Adapter`].
-    pub fn get_adapter_mut(&mut self) -> &mut A { &mut self.adapter }
-
-}
-
-impl<R, A> Iterator for CustomChunker<R, A>
-where
-    R: Read,
-    A: Adapter,
-{
-    type Item = A::Item;
-
-    fn next(&mut self) -> Option<A::Item> {
-        let opt = self.chunker.next();
-        self.adapter.adapt(opt)
-    }
-}
-
 /**
 Simpler, less flexible, version of the [`Adapter`] trait.
 
 Can be used in situations where it suffices to just pass `None` and `Err()`
-values through and only operate when the inner [`ByteChunker`]'s `.next()`
-returns `Some(Ok(vec))`.
+values through and only operate when the inner
+[`ByteChunker`](crate::ByteChunker)'s `.next()` returns `Some(Ok(vec))`.
 
 This is less powerful than just using
 [`.map()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.map),
@@ -116,48 +87,90 @@ the custom type.
 */
 pub trait SimpleAdapter {
     /// The type into which it converts the `Vec<u8>`s successfully produced
-    /// by the underlying [`ByteChunker`]'s  `Iterator` implementation.
+    /// by the underlying [`ByteChunker`](crate::ByteChunker)'s  `Iterator`
+    /// implementation.
     type Item;
 
     /// Convert the `ByteChunker`'s output when _successful_.
     fn adapt(&mut self, v: Vec<u8>) -> Self::Item;
 }
 
-/**
-A version of [`CustomChunker`] that takes a [`SimpleAdapter`] type.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+enum Utf8ErrorStatus {
+    #[default]
+    Ok,
+    Errored,
+    Lossy,
+    Continue,
+}
+impl Eq for Utf8ErrorStatus {}
 
-This type will disappear once
-[Issue #1672](https://github.com/rust-lang/rfcs/pull/1672) is resolved.
-As it is, if `CustomChunker` tries to implement `Iterator` for _both_
-`Adapter` and `SimpleAdapter` types, these implementations conflict
-(though they shouldn't). Once the compiler is capable of figuring this
-out, `CustomChunker` will work with types that implement both of
-these traits.
+/**
+An example [`Adapter`] type for producing a chunker that yields `String`s.
+
+```rust
+# use std::error::Error;
+# fn main() -> Result<(), Box<dyn Error>> {
+    use regex_chunker::{ByteChunker, StringAdapter};
+    use std::io::Cursor;
+
+    let text = b"One, two, three four. Can I have a little more?";
+    let c = Cursor::new(text);
+
+    let chunks: Vec<_> = ByteChunker::new(c, "[ .,?]+")?
+        .with_adapter(StringAdapter::default())
+        .map(|res| res.unwrap())
+        .collect();
+
+    assert_eq!(
+        &chunks,
+        &[
+            "One", "two", "three", "four",
+            "Can", "I", "have", "a", "little", "more"
+        ].clone()
+    );
+#   Ok(()) }
+```
+
 */
-pub struct SimpleCustomChunker<R, S> {
-    chunker: ByteChunker<R>,
-    adapter: S,
+#[derive(Debug, Default)]
+pub struct StringAdapter {
+    status: Utf8ErrorStatus,
 }
 
-impl<R, A> SimpleCustomChunker<R, A> {
-    /// Consume this `SimpleCustomChunker` and return the underlying
-    /// [`ByteChunker`] and [`Adapter`].
-    pub fn into_innards(self) -> (ByteChunker<R>, A) {
-        (self.chunker, self.adapter)
+impl StringAdapter {
+    pub fn new(mode: Utf8FailureMode) -> Self {
+        let status = match mode {
+            Utf8FailureMode::Fatal => Utf8ErrorStatus::Ok,
+            Utf8FailureMode::Lossy => Utf8ErrorStatus::Lossy,
+            Utf8FailureMode::Continue => Utf8ErrorStatus::Continue,
+        };
+
+        Self { status }
     }
 }
 
-impl<R, S> Iterator for SimpleCustomChunker<R, S>
-where
-    R: Read,
-    S: SimpleAdapter,
-{
-    type Item = Result<S::Item, RcErr>;
+impl Adapter for StringAdapter {
+    type Item = Result<String, RcErr>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.chunker.next()? {
-            Ok(v) => Some(Ok(self.adapter.adapt(v))),
-            Err(e) => Some(Err(e)),
+    fn adapt(&mut self, v: Option<Result<Vec<u8>, RcErr>>) -> Option<Self::Item> {
+        match (self.status, v) {
+            (Utf8ErrorStatus::Errored, _) => None,
+            (_, None) => None,
+            (_, Some(Err(e))) => Some(Err(e)),
+            (Utf8ErrorStatus::Lossy, Some(Ok(v))) =>
+                Some(Ok(String::from_utf8_lossy(&v).into())),
+            (Utf8ErrorStatus::Ok, Some(Ok(v))) => match String::from_utf8(v) {
+                Ok(s) => Some(Ok(s)),
+                Err(e) => {
+                    self.status = Utf8ErrorStatus::Errored;
+                    Some(Err(e.into()))
+                },
+            },
+            (Utf8ErrorStatus::Continue, Some(Ok(v))) => match String::from_utf8(v) {
+                Ok(s) => Some(Ok(s)),
+                Err(e) => Some(Err(e.into())),
+            }
         }
     }
 }

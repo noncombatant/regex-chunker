@@ -77,6 +77,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     for chunk in chunker {
         let chunk = chunk?;
+        //eprintln!("{:?}", &String::from_utf8_lossy(&chunk));
         let mut stdout = std::io::stdout();
         stdout.write_all(&chunk)?;
         stdout.flush()?;
