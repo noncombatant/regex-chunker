@@ -5,6 +5,8 @@ Asynchronous analogs to the base `*Chunker` types that wrap
 types and implement
 [`Stream`](https://docs.rs/futures/latest/futures/stream/trait.Stream.html).
 */
+pub use crate::stream_adapter::*;
+
 use std::{
     pin::Pin,
     task::{Context, Poll},

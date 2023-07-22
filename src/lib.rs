@@ -48,6 +48,8 @@ pub mod err;
 #[doc(cfg(feature = "async"))]
 pub mod stream;
 
+pub(crate) mod stream_adapter;
+
 use std::{
     fmt::{Debug, Formatter},
     hint::spin_loop,
