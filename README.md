@@ -37,27 +37,26 @@ type and produces a
 [`Stream`](https://docs.rs/futures-core/0.3.28/futures_core/stream/trait.Stream.html)
 of byte chunks.
 
-There isn't yet an async `StringChunker`. The next update will introduce an
-"adaptor" trait for transforming a the output of a ByteChunker into an
-arbitrary type; the `StringChunker` will then be reimplemented that way.
+## Running The Tests
+
+If you want to run the tests for the `async` features, you need to first
+build `src/bin/slowsource.rs` with the `async` and `test` feature enabled:
+
+```sh
+$ cargo build --bin slowsource --all-features
+```
+
+Some of the [`stream`] module tests run it in a subprocess and use it as
+a source of bytes.
 
 ## Unanswered Questions and Stuff To do
 
 This is, as of yet, an essentially naive implementation. What can be done
 to optimize performance?
 
-Add a trait to arbitrarily transform the output of the `ByteChunker`,
-expose it, and re-implement the `StringChunker` (including adding an async
-version) with it.
+Is there room to tighten up the `RcErr` type?
 
-## Running The Tests
-
-If you want to run the tests, you need to first (debug) build
-`src/bin/slowsource.rs` with the `test` feature enabled:
-
-```sh
-$ cargo build --bin slowsource --features test
-```
-
-Some of the [`stream`] module tests run it in a subprocess and use it as
-a source of bytes.
+When non-overlapping blanket impls
+([1672](https://github.com/rust-lang/rfcs/pull/1672),
+maybe [20400](https://github.com/rust-lang/rust/issues/20400)) land, remove both the
+`SimpleCustomChunker` types.

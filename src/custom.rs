@@ -5,9 +5,43 @@ use std::io::Read;
 
 use crate::{Adapter, ByteChunker, RcErr, SimpleAdapter};
 
+/**
+A chunker that has additionally been supplied with an [`Adapter`], so it
+can produce arbitrary types. The `CustomChunker`s does not have a separate
+constructor; it is built by combining a `ByteChunker` with an `Adapter`
+using [`ByteChunker::with_adapter`].
+
+Here's the example using the [`StringAdapter`](crate::StringAdapter) type
+to yield [`String`]s instead of byte vectors.
+
+```rust
+# use std::error::Error;
+# fn main() -> Result<(), Box<dyn Error>> {
+    use regex_chunker::{ByteChunker, CustomChunker, StringAdapter};
+    use std::io::Cursor;
+
+    let text = b"One, two, three four. Can I have a little more?";
+    let c = Cursor::new(text);
+
+    let chunks: Vec<_> = ByteChunker::new(c, "[ .,?]+")?
+        .with_adapter(StringAdapter::default())
+        .map(|res| res.unwrap())
+        .collect();
+
+    assert_eq!(
+        &chunks,
+        &[
+            "One", "two", "three", "four",
+            "Can", "I", "have", "a", "little", "more"
+        ].clone()
+    );
+#   Ok(()) }
+```
+*/
+
 pub struct CustomChunker<R, A> {
-    pub(super) chunker: ByteChunker<R>,
-    pub(super) adapter: A,
+    chunker: ByteChunker<R>,
+    adapter: A,
 }
 
 impl<R, A> CustomChunker<R, A> {
@@ -23,6 +57,12 @@ impl<R, A> CustomChunker<R, A> {
     /// Get a mutable reference to the underlying [`Adapter`].
     pub fn get_adapter_mut(&mut self) -> &mut A { &mut self.adapter }
 
+}
+
+impl<R, A> From<(ByteChunker<R>, A)> for CustomChunker<R, A> {
+    fn from((chunker, adapter): (ByteChunker<R>, A)) -> Self {
+        Self { chunker, adapter }
+    }
 }
 
 impl<R, A> Iterator for CustomChunker<R, A>
@@ -66,6 +106,12 @@ impl<R, A> SimpleCustomChunker<R, A> {
 
     /// Get a mutable reference to the underlying [`SimpleAdapter`].
     pub fn get_adapter_mut(&mut self) -> &mut A { &mut self.adapter }
+}
+
+impl<R, A> From<(ByteChunker<R>, A)> for SimpleCustomChunker<R, A> {
+    fn from((chunker, adapter): (ByteChunker<R>, A)) -> Self {
+        Self { chunker, adapter }
+    }
 }
 
 impl<R, A> Iterator for SimpleCustomChunker<R, A>

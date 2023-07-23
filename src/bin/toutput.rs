@@ -1,7 +1,6 @@
 #![allow(dead_code)]
-
 /**!
-Generating output for tests and documentation.
+Experimenting with code and generating output for tests, doc tests.
 */
 use std::error::Error;
 
@@ -96,9 +95,39 @@ fn string_adapter() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn simple_string() -> Result<(), Box<dyn Error>> {
+    use regex_chunker::{ByteChunker, SimpleAdapter};
+    use std::io::Cursor;
+
+    struct LossyStringAdapter {}
+
+    impl SimpleAdapter for LossyStringAdapter {
+        type Item = String;
+
+        fn adapt(&mut self, v: Vec<u8>) -> Self::Item {
+            String::from_utf8_lossy(&v).into()
+        }
+    }
+
+    let text = b"One, two, three four. Can I have a little more?";
+    let c = Cursor::new(text);
+
+    let chunks: Vec<_> = ByteChunker::new(c, "[ .,?]+")?
+        .with_simple_adapter(LossyStringAdapter{})
+        .map(|res| res.unwrap())
+        .collect();
+
+    assert_eq!(
+        &chunks,
+        &["One", "two", "three", "four", "Can", "I", "have", "a", "little", "more"].clone()
+    );
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
-    //example()?;
+    example()?;
     adapter_example()?;
+    simple_string()?;
 
     Ok(())
 }

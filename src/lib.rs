@@ -1,4 +1,4 @@
-#![feature(doc_cfg)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 /*!
 The centerpiece of this crate is the [`ByteChunker`], which takes a regular
@@ -51,8 +51,8 @@ mod custom;
 pub use custom::*;
 mod err;
 pub use err::RcErr;
-#[cfg(any(feature = "async", doc))]
-#[doc(cfg(feature = "async"))]
+#[cfg(any(feature = "async", docsrs))]
+#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub mod stream;
 
 #[cfg(test)]

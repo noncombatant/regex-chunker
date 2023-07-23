@@ -197,6 +197,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[allow(unused_imports)]
     use crate::tests::{
         chunk_vec, ref_slice_cmp, HTTP_PATT, HTTP_URL, PASSWD_PATH, PASSWD_PATT, TEST_PATH,
         TEST_PATT,
@@ -204,7 +205,7 @@ mod tests {
 
     use std::process::Stdio;
 
-    use tokio::{fs::File, io::AsyncReadExt, process::Command};
+    use tokio::{fs::File, process::Command};
     use tokio_stream::StreamExt;
 
     static SOURCE: &str = "target/debug/slowsource";

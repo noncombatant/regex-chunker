@@ -84,6 +84,40 @@ This is less powerful than just using
 [`.map()`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.map),
 _et. al._, but simpler because there's no error handling required by
 the custom type.
+
+The [`StringAdapter`] type tracks error status, but we can implement a
+simpler type that just performs lossy UTF-8 conversion.
+
+```rust
+# use regex_chunker::RcErr;
+use regex_chunker::{ByteChunker, SimpleAdapter};
+use std::io::Cursor;
+
+struct LossyStringAdapter {}
+
+impl SimpleAdapter for LossyStringAdapter {
+    type Item = String;
+
+    fn adapt(&mut self, v: Vec<u8>) -> Self::Item {
+        String::from_utf8_lossy(&v).into()
+    }
+}
+
+let text = b"One, two, three four. Can I have a little more?";
+let c = Cursor::new(text);
+
+let chunks: Vec<_> = ByteChunker::new(c, "[ .,?]+")?
+    .with_simple_adapter(LossyStringAdapter{})
+    .map(|res| res.unwrap())
+    .collect();
+
+assert_eq!(
+    &chunks,
+    &["One", "two", "three", "four", "Can", "I", "have", "a", "little", "more"].clone()
+);
+# Ok::<(), RcErr>(())
+```
+}
 */
 pub trait SimpleAdapter {
     /// The type into which it converts the `Vec<u8>`s successfully produced

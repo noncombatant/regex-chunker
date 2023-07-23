@@ -9,7 +9,7 @@ use std::{
 
 use regex::bytes::Regex;
 
-use crate::{ctrl::*, CustomChunker, RcErr};
+use crate::{ctrl::*, CustomChunker, RcErr, SimpleCustomChunker};
 
 // By default the `read_buffer` size is 1 KiB.
 const DEFAULT_BUFFER_SIZE: usize = 1024;
@@ -184,10 +184,12 @@ impl<R> ByteChunker<R> {
     `Adapter` type.
     */
     pub fn with_adapter<A>(self, adapter: A) -> CustomChunker<R, A> {
-        CustomChunker {
-            chunker: self,
-            adapter,
-        }
+        (self, adapter).into()
+    }
+
+    pub fn with_simple_adapter<A>(self, adapter: A) -> SimpleCustomChunker<R, A>
+    {
+        (self, adapter).into()
     }
 
     /*
