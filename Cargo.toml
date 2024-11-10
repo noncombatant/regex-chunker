@@ -46,3 +46,6 @@ required-features = ["async", "test"]
 [[bin]]
 name = "slowsource"
 required-features = ["async", "test"]
+
+[[bin]]
+name = "readme"
